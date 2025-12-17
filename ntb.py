@@ -215,45 +215,119 @@ for corpus_name, cv_dict in concept_vectors.items():
     cos_sim = np.dot(cv_neg_pos.vector, combined_vector_norm)
     print(f"Cosine similarity between Negative to Positive and sum of Negative to Neutral + Neutral to Positive for {corpus_name}: {cos_sim:.4f}")
 
+
 # %%
-# Create a stacked area chart of proportions per bin (proportion of all samples in that bin)
-import matplotlib.pyplot as plt
+# Find the best vector that projects from the mean fiction4 neutral text to the neg_to_pos vector.
 import numpy as np
+neutral_mask = corpora["Fiction4"]["valence_label"] == "neutral"
+neutral_embeddings = np.asarray(corpora["Fiction4"]["embedding"])[neutral_mask]
+mean_neutral = neutral_embeddings.mean(axis=0)
+negative_mask = corpora["Fiction4"]["valence_label"] == "negative"
+negative_embeddings = np.asarray(corpora["Fiction4"]["embedding"])[negative_mask]
+mean_negative = negative_embeddings.mean(axis=0)
+neg_to_pos_vector = concept_vectors["Fiction4"]["negative_to_positive"].vector
 
-projections = concept_vectors["Fiction4"]["negative_to_positive"].project(corpora["Emobank"]["embedding"])
-labels = corpora["Emobank"]["valence_label"]
+# Find best_vector projecting from mean_neutral onto the vector neg_to_pos and taking the difference between the projected point and mean_neutral
+proj_distance_from_negative = np.dot(mean_neutral, neg_to_pos_vector) * neg_to_pos_vector
+proj_point = mean_negative + proj_distance_from_negative
+best_vector = proj_point - mean_neutral
 
-# Define bins
-bins = np.linspace(-2, 2, 41)  # 40 bins from -2 to 2
-bin_centers = 0.5 * (bins[:-1] + bins[1:])
 
-# Prepare counts for each label
-label_order = ["negative", "neutral", "positive"]
-counts = np.zeros((len(label_order), len(bins) - 1), dtype=int)
-for i, label in enumerate(label_order):
-    mask = (labels == label).values  # ensure boolean ndarray
-    hist, _ = np.histogram(projections[mask], bins=bins)
-    counts[i] = hist
+# Plot all datapoints with axis 1 being neg_to_pos projection and axis 2 being best_vector projection
+import matplotlib.pyplot as plt
+projections_neg_to_pos = concept_vectors["Fiction4"]["negative_to_positive"].project(corpora["Fiction4"]["embedding"])
+# Project corpora["Fiction4"]["embedding"] onto best_vector
+# First, normalize best_vector
+best_vector_norm = best_vector / np.linalg.norm(best_vector)
+projections_best_vector = np.dot(corpora["Fiction4"]["embedding"], best_vector_norm)
 
-# Convert to proportions per bin (proportion of all samples in that bin)
-total_per_bin = counts.sum(axis=0)  # shape: (n_bins,)
-# Avoid division by zero: where total_per_bin == 0, set proportions to 0
-proportions = np.zeros_like(counts, dtype=float)
-nonzero = total_per_bin != 0
-proportions[:, nonzero] = counts[:, nonzero] / total_per_bin[nonzero]
+df_plot = pd.DataFrame({
+    "neg_to_pos_projection": projections_neg_to_pos,
+    "best_vector_projection": projections_best_vector,
+    "valence_label": corpora["Fiction4"]["valence_label"]
+})
 
-# Plot stacked area chart of proportions
-plt.figure(figsize=(10, 6))
-plt.stackplot(bin_centers, proportions, labels=label_order, colors=["tab:red", "tab:blue", "tab:green"], alpha=0.8)
+# Calculate mean projections for each label
+positive_mask = corpora["Fiction4"]["valence_label"] == "positive"
+positive_embeddings = np.asarray(corpora["Fiction4"]["embedding"])[positive_mask]
+mean_positive = positive_embeddings.mean(axis=0)
+
+mean_neutral_proj_neg_to_pos = np.dot(mean_neutral, neg_to_pos_vector)
+mean_neutral_proj_best = np.dot(mean_neutral, best_vector_norm)
+mean_negative_proj_neg_to_pos = np.dot(mean_negative, neg_to_pos_vector)
+mean_negative_proj_best = np.dot(mean_negative, best_vector_norm)
+mean_positive_proj_neg_to_pos = np.dot(mean_positive, neg_to_pos_vector)
+mean_positive_proj_best = np.dot(mean_positive, best_vector_norm)
+
+plt.figure(figsize=(10, 8))
+sns.scatterplot(
+    data=df_plot,
+    x="neg_to_pos_projection",
+    y="best_vector_projection",
+    hue="valence_label",
+    palette={"positive": "tab:green", "neutral": "tab:blue", "negative": "tab:red"},
+    alpha=0.6,
+    size=0.001
+)
+# Add mean points for each label
+plt.scatter([mean_negative_proj_neg_to_pos], [mean_negative_proj_best], color="darkred", s=200, marker="X", edgecolors="black", linewidth=2, label="Mean Negative", zorder=5)
+plt.scatter([mean_neutral_proj_neg_to_pos], [mean_neutral_proj_best], color="darkblue", s=200, marker="X", edgecolors="black", linewidth=2, label="Mean Neutral", zorder=5)
+plt.scatter([mean_positive_proj_neg_to_pos], [mean_positive_proj_best], color="darkgreen", s=200, marker="X", edgecolors="black", linewidth=2, label="Mean Positive", zorder=5)
+
 plt.xlabel("Projection onto Negative to Positive Concept Vector")
-plt.ylabel("Proportion of Samples in Bin")
-plt.ylim(0, 1)
-plt.title("Stacked Area Chart of Proportions by Valence Label (Fiction4 Vector - Emobank Corpus)")
-plt.legend(title="Valence Label", loc="upper left")
+plt.ylabel("Projection onto Best Vector from Mean Neutral to Neg→Pos")
+plt.title("Scatterplot of Projections onto Neg→Pos vs. Best Vector (Fiction4 Corpus)")
+plt.axhline(0, color="gray", linestyle="--", linewidth=1)
+plt.axvline(0, color="gray", linestyle="--", linewidth=1)
+plt.legend(title="Valence Label")
+plt.tight_layout()
+plt.show()
+# %%
+# Distributions of both projections
+import matplotlib.pyplot as plt
+import seaborn as sns
+projections_neg_to_pos = concept_vectors["Fiction4"]["negative_to_positive"].project(corpora["Fiction4"]["embedding"])
+projections_best_vector = np.dot(corpora["Fiction4"]["embedding"], best_vector_norm)
+df_plot = pd.DataFrame({
+    "neg_to_pos_projection": projections_neg_to_pos,
+    "best_vector_projection": projections_best_vector,
+    "valence_label": corpora["Fiction4"]["valence_label"]
+})
+plt.figure(figsize=(12, 5))
+# Neg to Pos Projection
+plt.subplot(1, 2, 1)
+sns.histplot(
+    data=df_plot,
+    x="neg_to_pos_projection",
+    hue="valence_label",
+    palette={"positive": "tab:green", "neutral": "tab:blue", "negative": "tab:red"},
+    bins=30,
+    kde=True,
+    alpha=0.5
+)
+plt.title("Distribution of Projections onto Negative to Positive Concept Vector")
+plt.xlabel("Projection onto Negative to Positive Concept Vector")
+plt.ylabel("Frequency")
+# Best Vector Projection
+plt.subplot(1, 2, 2)
+sns.histplot(
+    data=df_plot,
+    x="best_vector_projection",
+    hue="valence_label",
+    palette={"positive": "tab:green", "neutral": "tab:blue", "negative": "tab:red"},
+    bins=30,
+    kde=True,
+    alpha=0.5
+)
+plt.title("Distribution of Projections onto Best Vector from Mean Neutral to Neg→Pos")
+plt.xlabel("Projection onto Best Vector from Mean Neutral to Neg→Pos")
+plt.ylabel("Frequency")
 plt.tight_layout()
 plt.show()
 
-
+# Cosine similarity between best_vector and neg_to_pos_vector
+cos_sim_best_negpos = np.dot(best_vector / np.linalg.norm(best_vector), neg_to_pos_vector / np.linalg.norm(neg_to_pos_vector))
+print(f"Cosine similarity between Best Vector and Negative to Positive Concept Vector: {cos_sim_best_negpos:.4f}")
 
 # %%
 # Count-normalized KDE plot (KDE area equals count of points per label)
@@ -944,7 +1018,7 @@ plt.tight_layout()
 plt.show()
 
 # %%
-
+### FACEBOOK PLOTS ####
 # Redo the plot above but display valence as as deviations from mean, so there is no difference between positive and negative standard deviations.
 # For the emobank dataset, project onto arousal and valence and display results in a scatterplot. Compare to a scatterplot with original scores.
 import matplotlib.pyplot as plt
@@ -1042,4 +1116,281 @@ plt.text(0.05, 0.95, txto, transform=plt.gca().transAxes,
          ha="left", va="top", bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
 plt.tight_layout()
 plt.show()
+# %%
+# Check interrater correlation of arousal and valence in Emobank
+
+
+# %%
+# Create a dictionary of corpora dictionaries using dominance labels
+dominance_corpora = {
+    "Emobank": {"dominance_label": None, "embedding": corpora["Emobank"]["embedding"], "dataframe": Emobank},
+}
+
+import numpy as np
+for corpus_name, corpus_info in dominance_corpora.items():
+    df = corpus_info["dataframe"]
+    if "dominance" in df.columns:
+        mean_dominance = df["dominance"].mean()
+        std_dominance = df["dominance"].std()
+        positive_threshold = mean_dominance + std_dominance
+        negative_threshold = mean_dominance - std_dominance
+        def label_dominance(x):
+            if x >= positive_threshold:
+                return "positive"
+            elif x <= negative_threshold:
+                return "negative"
+            else:
+                return "neutral"
+
+        corpus_info["dominance_label"] = df["dominance"].apply(label_dominance)
+    else:
+        print(f"Dominance column not found in {corpus_name} dataframe.")
+    # For debugging, print the distribution of labels
+    print(f"{corpus_name} dominance label distribution:\n{corpus_info['dominance_label'].value_counts()}\n")
+
+
+dominance_concept_vectors = {}
+for corpus_name, corpus_info in dominance_corpora.items():
+    embeddings = np.asarray(corpus_info["embedding"])
+    labels = np.asarray(corpus_info["dominance_label"])
+
+    # helper to get embeddings for a given label
+    def get_emb(lbl):
+        mask = labels == lbl
+        return embeddings[mask]
+
+    pos_embeddings = get_emb("positive")
+    neg_embeddings = get_emb("negative")
+    neu_embeddings = get_emb("neutral")
+
+    cv_dict = {}
+    pairs = {
+        "negative_to_positive": (neg_embeddings, pos_embeddings),
+        "neutral_to_positive": (neu_embeddings, pos_embeddings),
+        "negative_to_neutral": (neg_embeddings, neu_embeddings),
+    }
+
+    for pair_name, (src_emb, tgt_emb) in pairs.items():
+        src_count = 0 if src_emb.size == 0 else src_emb.shape[0]
+        tgt_count = 0 if tgt_emb.size == 0 else tgt_emb.shape[0]
+        if src_count == 0 or tgt_count == 0:
+            print(f"Skipping {corpus_name} {pair_name}: insufficient examples (src={src_count}, tgt={tgt_count})")
+            cv_dict[pair_name] = None
+            continue
+
+        cv = ConceptVector(normalize=True)
+        cv.fit(src_emb, tgt_emb)
+        cv_dict[pair_name] = cv
+        print(f"Concept vector for {corpus_name} ({pair_name}) created.")
+
+    dominance_concept_vectors[corpus_name] = cv_dict
+
+# %%
+# Count-normalized histogram for dominance corpora using dominance concept vectors
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import pandas as pd
+
+# choose corpus and direction from dominance_concept_vectors / dominance_corpora
+train_corpus = "Emobank"
+direction = "negative_to_positive"
+
+cv = dominance_concept_vectors.get(train_corpus, {}).get(direction)
+if cv is None:
+    print(f"No concept vector found for {train_corpus} ({direction}). Skipping plot.")
+else:
+    projections = cv.project(dominance_corpora[train_corpus]["embedding"])
+    labels = dominance_corpora[train_corpus]["dominance_label"]
+
+    df_plot = pd.DataFrame({"projection": np.asarray(projections).ravel(), "dominance_label": labels}).dropna()
+
+    plt.figure(figsize=(10, 6))
+    palette = {"negative": "tab:red", "neutral": "tab:blue", "positive": "tab:green"}
+    bins = np.linspace(-2, 2, 41)
+
+    # Plot histogram for each dominance label with alpha=0.5 (counts)
+    for label in ["negative", "neutral", "positive"]:
+        subset = df_plot[df_plot["dominance_label"] == label]["projection"]
+        if subset.shape[0] > 1:
+            sns.histplot(
+                subset,
+                bins=bins,
+                color=palette[label],
+                label=label,
+                alpha=0.5,
+                stat="count",
+                kde=False,
+            )
+        else:
+            sns.rugplot(subset, color=palette[label], height=0.05)
+
+    plt.xlabel("Projection onto Negative → Positive Dominance Concept Vector")
+    plt.ylabel("Count")
+    plt.title(f"Distribution of Projections by Dominance Label — {train_corpus} ({direction})")
+    plt.legend(title="Dominance Label")
+    plt.xlim(-2, 2)
+    plt.tight_layout()
+    plt.show()
+
+# %%
+# Scatterplot between dataframe["dominance"] and projections onto the negative_to_positive concept vector
+import matplotlib.pyplot as plt
+projections = dominance_concept_vectors["Emobank"]["negative_to_positive"].project(dominance_corpora["Emobank"]["embedding"])
+dominance_scores = dominance_corpora["Emobank"]["dataframe"]["dominance"].reset_index(drop=True)
+
+# Ensure projections is a 1D numpy array aligned with dominance_scores
+projections = np.asarray(projections).ravel()
+
+df_scatter = pd.DataFrame({"dominance": dominance_scores, "projection": projections})
+
+# Compute mean and std and create a hue/category column based on std thresholds
+mean_d = df_scatter["dominance"].mean()
+std_d = df_scatter["dominance"].std()
+
+def dominance_std_category(x):
+    if x >= mean_d + std_d:
+        return "Positive (>= mean + 1σ)"
+    elif x <= mean_d - std_d:
+        return "Negative (<= mean - 1σ)"
+    else:
+        return "Neutral (Within 1σ)"
+
+df_scatter["dominance_hue"] = df_scatter["dominance"].apply(dominance_std_category)
+
+# Plot with hue and show mean / mean±std lines
+plt.figure(figsize=(10, 6))
+palette = {"Positive (>= mean + 1σ)": "tab:green", "Neutral (Within 1σ)": "tab:blue", "Negative (<= mean - 1σ)": "tab:red"}
+sns.scatterplot(data=df_scatter, x="dominance", y="projection", hue="dominance_hue", palette=palette, alpha=0.7)
+
+plt.xlabel("Dominance Score")
+plt.ylabel("Projection onto Negative to Positive Concept Vector")
+plt.title("Scatterplot of Dominance Scores vs. Projections (Emobank Vector - Emobank Corpus) — hue by ±1σ from mean")
+plt.legend(title="Dominance (std category)", loc="best")
+plt.tight_layout()
+plt.show()
+
+# Print correlation
+mask = (~np.isnan(df_scatter["dominance"])) & (~np.isnan(df_scatter["projection"]))
+corr = np.nan
+if mask.sum() > 1:
+    corr = np.corrcoef(df_scatter["dominance"][mask], df_scatter["projection"][mask])[0, 1]
+print(f"Pearson correlation between dominance scores and projections: {np.nan_to_num(corr):.4f}")
+
+
+# %%
+# Plot emobank dominance vs valence
+import matplotlib.pyplot as plt
+import numpy as np
+emobank_dominance = corpora["Emobank"]["dataframe"]["dominance"]
+emobank_valence = corpora["Emobank"]["dataframe"]["valence"]
+plt.figure(figsize=(10, 6))
+plt.scatter(emobank_valence, emobank_dominance, alpha=0.5)
+plt.xlabel("Valence Score")
+plt.ylabel("Dominance Score")
+plt.title("Scatterplot of Valence vs. Dominance Scores (Emobank Corpus)")
+# compute correlation
+mask = (~np.isnan(emobank_valence)) & (~np.isnan(emobank_dominance))
+corr = np.nan
+if mask.sum() > 1:
+    corr = np.corrcoef(emobank_valence[mask], emobank_dominance[mask])[0, 1]    
+plt.text(0.05, 0.95, f"Pearson r = {np.nan_to_num(corr):.3f}", transform=plt.gca().transAxes,
+         ha="left", va="top", bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
+plt.tight_layout()
+plt.show()
+# %%
+# Plot projected dominance vs projected valence
+import matplotlib.pyplot as plt
+import numpy as np
+emobank_embeddings = corpora["Emobank"]["embedding"]
+valence_cv = concept_vectors["Emobank"]["negative_to_positive"]
+dominance_cv = dominance_concept_vectors["Emobank"]["negative_to_positive"]
+valence_projections = np.asarray(valence_cv.project(emobank_embeddings)).ravel()
+dominance_projections = np.asarray(dominance_cv.project(emobank_embeddings)).ravel()
+plt.figure(figsize=(10, 6))
+plt.scatter(valence_projections, dominance_projections, alpha=0.5)
+plt.xlabel("Projected Valence (Negative to Positive Concept Vector)")
+plt.ylabel("Projected Dominance (Negative to Positive Concept Vector)")
+plt.title("Scatterplot of Projected Valence vs. Projected Dominance (Emobank Corpus)")
+# compute correlation
+mask = (~np.isnan(valence_projections)) & (~np.isnan(dominance_projections))
+corr = np.nan
+if mask.sum() > 1:
+    corr = np.corrcoef(valence_projections[mask], dominance_projections[mask])[0, 1]    
+plt.text(0.05, 0.95, f"Pearson r = {np.nan_to_num(corr):.3f}", transform=plt.gca().transAxes,
+            ha="left", va="top", bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
+plt.tight_layout()
+plt.show()
+# %%
+# Show a distribution of emobank dominance scores.
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+emobank_dominance = corpora["Emobank"]["dataframe"]["dominance"]
+plt.figure(figsize=(10, 6))
+sns.histplot(emobank_dominance.dropna(), bins=100, kde=True, color="skyblue")
+plt.xlabel("Dominance Score")
+plt.ylabel("Count")
+plt.title("Distribution of Dominance Scores (Emobank Corpus)")
+plt.tight_layout()
+plt.show()
+
+# %%
+# Create a 3d plot of projected valence, arousal, and dominance for Emobank
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+emobank_embeddings = corpora["Emobank"]["embedding"]
+valence_cv = concept_vectors["Emobank"]["negative_to_positive"]
+arousal_cv = arousal_concept_vectors["Emobank"]["negative_to_positive"]
+dominance_cv = dominance_concept_vectors["Emobank"]["negative_to_positive"]
+valence_projections = np.asarray(valence_cv.project(emobank_embeddings)).ravel()
+arousal_projections = np.asarray(arousal_cv.project(emobank_embeddings)).ravel()
+dominance_projections = np.asarray(dominance_cv.project(emobank_embeddings)).ravel()
+
+# Sample 100 random points
+sample_size = min(1000, len(valence_projections))
+indices = np.random.choice(len(valence_projections), sample_size, replace=False)
+valence_sample = valence_projections[indices]
+arousal_sample = arousal_projections[indices]
+dominance_sample = dominance_projections[indices]
+
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(valence_sample, arousal_sample, dominance_sample, alpha=0.5)
+ax.set_xlabel("Projected Valence")
+ax.set_ylabel("Projected Arousal")
+ax.set_zlabel("Projected Dominance")
+ax.set_title("3D Scatterplot of Projected Valence, Arousal, and Dominance (Emobank Corpus, n=1000)")
+plt.tight_layout()
+plt.show()
+
+
+# %%
+# Create a 3d plot of original valence, arousal, and dominance for Emobank corpus
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+emobank_valence = corpora["Emobank"]["dataframe"]["valence"].values
+emobank_arousal = corpora["Emobank"]["dataframe"]["arousal"].values
+emobank_dominance = corpora["Emobank"]["dataframe"]["dominance"].values
+
+# Sample 100 random points
+sample_size = min(1000, len(emobank_valence))
+indices = np.random.choice(len(emobank_valence), sample_size, replace=False)
+valence_sample = emobank_valence[indices]
+arousal_sample = emobank_arousal[indices]
+dominance_sample = emobank_dominance[indices]
+
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(valence_sample, arousal_sample, dominance_sample, alpha=0.5)
+ax.set_xlabel("Original Valence")
+ax.set_ylabel("Original Arousal")
+ax.set_zlabel("Original Dominance")
+ax.set_title("3D Scatterplot of Original Valence, Arousal, and Dominance (Emobank Corpus, n=1000)")
+plt.tight_layout()
+plt.show()
+
+
 # %%

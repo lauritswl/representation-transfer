@@ -21,10 +21,10 @@ loader.df.to_csv('data/clean_text/fiction4.csv', index=False)
 # Load the EmoBank Corpus
 Emobank = pd.read_csv("data/raw/emobank.csv")
 # Select V, A and text columns
-Emobank = Emobank[["V", "A", "text"]]
+Emobank = Emobank[["V", "A", "D", "text"]]
 # Rename and reorder columns to have a common format
-Emobank.columns = ["valence", "arousal", "text"]
-Emobank = Emobank[["text", "valence", "arousal"]]
+Emobank.columns = ["valence", "arousal", "dominance", "text"]
+Emobank = Emobank[["text", "valence", "arousal", "dominance"]]
 Emobank.head()
 
 # Save to CSV
@@ -44,3 +44,5 @@ Facebook.columns = ["text", "valence", "arousal"]
 
 # Save to CSV
 Facebook.to_csv('data/clean_text/facebook.csv', index=False)
+
+# %%
